@@ -1,0 +1,489 @@
+---
+title: "EDX_Project_2"
+author: "Kanak Tyagi"
+date: "13 November 2019"
+output:
+  html_document:
+    df_print: paged
+---
+#Introduction
+Imagine that you are a statistical consultant who has recently been hired by a real estate investment firm based in Ames, Iowa. They have had an intern collect and collate all of the recent house sales in Ames and have put together a large spreadsheet that contains the sale price of each house along with many of its physical features.
+
+Your employers want you to take this data and develop a model to predict the selling price of a given home. They hope to use this information to help assess whether the asking price of a house is higher or lower than the true value of the house. If the home is undervalued, it may be a good investment for the firm.
+
+To better assess the quality of our model, the whole data have been randomly divided into three separate data sets: a training data set, a test data set, and a validation data set. Initially we will use the training data set; the others will be used later for comparison purposes.
+
+
+
+
+# set working directory
+
+```{r}
+setwd("C:/Users/Tyagi/Downloads")
+getwd()
+```
+
+
+# Load the relevant packages.
+
+```{r}
+
+if(!require(MASS)){install.packages('MASS')}
+if(!require(dplyr)){install.packages('dplyr')}
+if(!require(ggplot2)){install.packages('ggplot2')}
+if(!require(BAS)){install.packages('BAS')}
+if(!require(GGally)){install.packages('GGally')}
+if(!require(car)){install.packages('car')}
+if(!require(conover.test)){install.packages('conover.test')}
+if(!require(kableExtra)){install.packages('kableExtra')}
+if(!require(gridExtra)){install.packages('gridExtra')}
+if(!require(ggpubr)){install.packages('ggpubr')}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+```
+
+
+
+#Load Dataset
+```{r}
+load('ames_train.RData')
+```
+
+
+
+
+################## Exploratory Data Analysis ###################
+
+When you first get your data, it's very tempting to immediately begin fitting models and assessing how they perform. However, before you begin modeling, it's absolutely essential to explore the structure of the data and the relationships between the variables in the data set.
+
+## the dataset and its basic summary statistics
+#Dimensions of the data
+```{r}
+dim(ames_train)
+```
+
+
+# intial 7 rows with header
+```{r}
+head(ames_train)
+```
+
+
+# basic summary statistics
+```{r}
+summary(ames_train)
+```
+
+
+
+
+######## Cleaning the Data ##########
+
+Glimpsing the summary, some continuous variables such as Lot.Frontage have a great number of NA's that truly corresponde to missing data while the categorical variables such as Fence, Garage.Qual and Garage.Cond have NA's corresponding not to missing data but to another category such as "Not having a fence"/"Not having a garage". Before embarking on EDA thus, it makes sense to transform those NA's in a new category otherwise we may risk to incur a bias in the data and the modelling by discarding so many rows of data. I will also create a new variable as in the first peer assessment, Years.Old that shows how many years old each house is. Some of the categorical variables: MS.SubClass, Overall.Cond and Overall.Qual are also incorrectly coded as having type int so I will also convert them. Also, according to one of the past assessments, we should filter the dataset to contain only the Sale conditions that were normal, as the houses with non-normal selling conditions exhibit atypical behavior and can disproportionately influence the model. Finally, we will also had a log of the Lot.Area and of the price due to their non-linear relationships as seen in other assessments.
+
+
+```{r}
+ames_train <- ames_train %>% 
+  mutate(Alley = if_else(is.na(Alley), 'No Alley Access', as.character(Alley)),
+         Bsmt.Qual = if_else(is.na(Bsmt.Qual), 'No Basement', as.character(Bsmt.Qual)),
+         Bsmt.Cond = if_else(is.na(Bsmt.Cond), 'No Basement', as.character(Bsmt.Cond)),
+         Bsmt.Exposure = if_else(is.na(Bsmt.Exposure), 'No Basement', as.character(Bsmt.Cond)),
+         BsmtFin.Type.1 = if_else(is.na(BsmtFin.Type.1), 'No Basement', as.character(BsmtFin.Type.1)),
+         BsmtFin.Type.2 = if_else(is.na(BsmtFin.Type.2), 'No Basement', as.character(BsmtFin.Type.2)),
+         Fireplace.Qu = if_else(is.na(Fireplace.Qu), 'No Fireplace', as.character(Fireplace.Qu)),
+         Garage.Type = if_else(is.na(Garage.Type), 'No Garage', as.character(Garage.Type)),
+         Garage.Finish = if_else(is.na(Garage.Finish), 'No Garage', as.character(Garage.Finish)),
+         Garage.Qual = if_else(is.na(Garage.Qual), 'No Garage', as.character(Garage.Qual)),
+         Garage.Cond = if_else(is.na(Garage.Cond), 'No Garage', as.character(Garage.Cond)),
+         Pool.QC = if_else(is.na(Pool.QC), 'No Pool', as.character(Pool.QC)),
+         Fence = if_else(is.na(Fence), 'No Fence', as.character(Fence)),
+         Misc.Feature = if_else(is.na(Misc.Feature), 'No Misc Features', as.character(Misc.Feature)),
+         Years.Old = 2018 - Year.Built,
+         MS.SubClass = as.factor(MS.SubClass),
+         Overall.Qual = as.factor(Overall.Qual),
+         Overall.Cond = as.factor(Overall.Cond),
+         log.price = log(price),
+         log.Lot.Area = log(Lot.Area))
+
+ames_train <- ames_train %>% 
+  filter(Sale.Condition == 'Normal')
+```
+
+
+
+
+
+############## Plots #########################
+
+As many of the variables such as Neighbourhoods, Lot.Area and the such were already explored in past assessments, for this one, I will be focusing on variables which still weren't explored and find their effect on price. As Lot.Area has been shown to be a good variable to build the model and as there is a need to use its log as well as the log of price to get a proper linear relation, all variables explored in these graphics will be against the log of price.
+
+
+#Plot-1 : Evaluating the effect of MS.SubClass on price
+```{r}
+ggplot(ames_train, aes(x = MS.SubClass, y = log.price, fill = MS.SubClass)) + geom_boxplot() + theme_bw() + scale_fill_discrete(guide=FALSE) + labs(title='Evaluating the effect of MS.SubClass on the log of price', x='Type of Dwelling involved in the sale', y='Logarithm of the Price')
+```
+
+According to this graphic, there exists some variability in the prices of the houses according to the types of Dwelling involved in the sale (only exception seems to be the 40 - 1-STORY W/FINISHED ATTIC ALL AGES dwelling). The types with highest price median are the 60 (2-STORY 1946 & NEWER) and the 120 (1-STORY PUD (Planned Unit Development) - 1946 & NEWER) subtypes.
+
+
+
+
+
+#Plot-2 : Effect of when the house was built (Year.Built) and House Style (House.Style) on log of price
+```{r}
+ggplot(ames_train, aes(x = Year.Built, y = log.price, col=House.Style)) + geom_point() + theme_bw() + labs(title='Effect of when the house was built and House Style on the log of price', x = 'Year the house was built', y = 'Logarithm of Price')
+```
+
+As expected, more modern houses are sold for higher prices than the older ones. Also, in the later years, 2 Story houses and Two and one-half story: 2nd level unfinished (2.5Unf) seem to sell for highest prices. We also notice that 1 Story Houses and 1.5Fin (One and one-half story: 2nd level finished) and 1.5Unf(One and one-half story: 2nd level unfinished) were more common in older years than recently.
+
+
+
+
+
+#Plot-3 : Effect of Heating Quality and condition on the Log Price
+```{r}
+ggplot(ames_train, aes(x = Heating.QC, y = log.price, fill=Heating.QC)) + geom_boxplot() + theme_bw() + labs(title='Effect of Heating Quality and Condition on the log of price', x = 'Heating Quality', y = 'Logarithm of Price') + scale_fill_discrete(guide=FALSE)
+```
+
+expected houses with excellent heating quality tend to be higher priced than the other houses, followed by houses with a good quality. Houses with fair quality show lower prices.
+
+
+
+
+
+
+
+
+
+
+## Development and assessment of an initial model, following a semi-guided process of analysis
+# An Initial Model
+
+In building a model, it is often useful to start by creating a simple, intuitive initial model based on the results of the exploratory data analysis. (Note: The goal at this stage is not to identify the "best" possible model but rather to choose a reasonable and understandable starting point. Later you will expand and revise this model to create your final model.
+```{r}
+initial_model <- lm(log(price) ~ log(Lot.Area) + MS.SubClass + Overall.Qual + Overall.Cond + Heating.QC + Year.Built + House.Style + Neighborhood + Exterior.1st + X1st.Flr.SF, data = ames_train)
+
+summary(initial_model)
+
+```
+
+I chose those ten variables with a combination of past assessments, the plotted graphics in this assessment and a bit of general intuition and expert knowledge. From past assessments, the Lot Area was highly correlated with price (albeit needing both to be transformed into their log scale), as well as Overall.Qual and Overall.Cond, Neighbourhood and Year.Built, which makes sense as since the prime mantra of selling houses is location, both the condition and quality of the house, as well as their neighbourhood and age will probably be correlated with selling price. Also, with the plots created in this assessement, Heating Quality and the Subclass of the Dwelling as well as the House Style seemed to be correlated with selling prices. Finally, it made intuitive sense that the exterior covering on house (Exterior.1st) and the square feet area of the first floor (didn't choose 2nd floor as well as some of the houses don't have 2nd floors) would also have an effect on selling prices.
+
+According to the model results, all variables chosen seem to be important predictors and each one should be interpreted holding all the others constant. Some variables such as exterior covering, 1st floor square feet area, age of the house, the logarithm of the lot area and the overall quality and condition raise the selling price as their value increases, holding all the other variables constant; others such as MS.SubClass, House Style and Neighbourhood either decrease or increase the selling price of the houses according to their categories.
+
+The adjusted R^2 for this model is 91.2%, which means that these variables explain 91.2% of the variance in the logarithm of the selling prices of the houses in this training set which is very good.
+
+
+
+
+
+
+###Model Selection
+From the initial model as the starting point, I will use a backwards stepwise approach using both AIC and BIC as criteria to choose the better model.
+
+#AIC
+```{r}
+initial_model_AIC <- stepAIC(initial_model, direction = 'backward', trace = FALSE)
+summary(initial_model_AIC)
+
+```
+
+
+#BIC
+```{r}
+initial_model_BIC <- stepAIC(initial_model, direction='backward', k = log(nrow(ames_train)), trace = FALSE)
+summary(initial_model_BIC)
+```
+
+According to the results, both approaches do not arrive at the same model. The model using BIC as criteria arrives to a model with a lower adjusted R^2 but with lesser predictor variables resulting in a more parsimonious model which is excellent for interpretation and fits with BIC objective which is to allow consistent estimation of the underlying data generating process.
+
+The model using AIC as criteria arrives to a model with higher adjusted R^2 and using more predictor variables, which is the initial model without any changes. This fits with AIC objective which is better for prediction as it is asymptotically equivalent to cross-validation, at the cost of a more parsimonious explanation.
+
+The differences between the criteria explain why they disagree. As the main objective of this assessment is predicting the selling prices of houses, I will stick with the AIC model as it fulfill that objective better.
+
+
+# Initial Model Residuals
+One way to assess the performance of a model is to examine the model's residuals. Here, we are creating a residual plot for your preferred model from above and using it to assess whether your model appears to fit the data well.
+```{r}
+par(mfrow=c(2,2))
+plot(initial_model_AIC)
+```
+
+By examining the residual plots, there appears to be no major problem with the residuals of the model apart from some high leverage outliers (rows 325, 339 and 611). This is expected when using categorical variables for building a regression model as it's hard for a subject to be a serious outlier in terms of a predictor if that predictor only has a few possible levels. I am expecting no serious implications in my model inference or predictions with such residual plots. The heavier tails of the distribution could be a problem, however the sample is so big that it won't be a problem due to the Central Limit Theorem. Even so, it would only impact our estimation/inference capacity. As the main goal here is prediction, this does not seem to be a problem.
+
+
+
+
+
+# Initial Model RMSE
+I have calculated it directly based on the model output.
+
+
+# Extract Predictions
+```{r}
+predictions_initial <- exp(predict(initial_model_AIC, ames_train))
+```
+
+
+
+# Extract Residuals
+```{r}
+residuals_initial <- ames_train$price - predictions_initial
+```
+
+
+# Calculate RMSE
+```{r}
+rmse_initial <- sqrt(mean(residuals_initial^2))
+rmse_initial
+```
+
+The RMSE (root mean square error) for this initial model is 20376.42 dollars.
+
+
+
+
+
+
+
+
+##Overfitting
+The process of building a model generally involves starting with an initial model (as I have done above), identifying its shortcomings, and adapting the model accordingly. This process may be repeated several times until the model fits the data reasonably well. However, the model may do well on training data but perform poorly out-of-sample (meaning, on a dataset other than the original training data) because the model is overly-tuned to specifically fit the training data. This is called "overfitting." To determine whether overfitting is occurring on a model, I have compared the performance of a model on both in-sample and out-of-sample data sets. To look at performance of my initial model on out-of-sample data, I will use the data set ames_test.
+
+For testing the performance of the initial model against the test data and comparing it to the performance of the initial model on the training data, I will calculate the RMSE for the model predictions using the test data and then compare it to the RMSE obtained in the previous question. Due to the conversions made in the original dataset, we also need to convert the same categories in the test data.
+
+```{r}
+load("ames_test.Rdata")
+
+ames_test <- ames_test %>% 
+  mutate(Alley = if_else(is.na(Alley), 'No Alley Access', as.character(Alley)),
+         Bsmt.Qual = if_else(is.na(Bsmt.Qual), 'No Basement', as.character(Bsmt.Qual)),
+         Bsmt.Cond = if_else(is.na(Bsmt.Cond), 'No Basement', as.character(Bsmt.Cond)),
+         Bsmt.Exposure = if_else(is.na(Bsmt.Exposure), 'No Basement', as.character(Bsmt.Cond)),
+         BsmtFin.Type.1 = if_else(is.na(BsmtFin.Type.1), 'No Basement', as.character(BsmtFin.Type.1)),
+         BsmtFin.Type.2 = if_else(is.na(BsmtFin.Type.2), 'No Basement', as.character(BsmtFin.Type.2)),
+         Fireplace.Qu = if_else(is.na(Fireplace.Qu), 'No Fireplace', as.character(Fireplace.Qu)),
+         Garage.Type = if_else(is.na(Garage.Type), 'No Garage', as.character(Garage.Type)),
+         Garage.Finish = if_else(is.na(Garage.Finish), 'No Garage', as.character(Garage.Finish)),
+         Garage.Qual = if_else(is.na(Garage.Qual), 'No Garage', as.character(Garage.Qual)),
+         Garage.Cond = if_else(is.na(Garage.Cond), 'No Garage', as.character(Garage.Cond)),
+         Pool.QC = if_else(is.na(Pool.QC), 'No Pool', as.character(Pool.QC)),
+         Fence = if_else(is.na(Fence), 'No Fence', as.character(Fence)),
+         Misc.Feature = if_else(is.na(Misc.Feature), 'No Misc Features', as.character(Misc.Feature)),
+         Years.Old = 2018 - Year.Built,
+         MS.SubClass = as.factor(MS.SubClass),
+         Overall.Qual = as.factor(Overall.Qual),
+         Overall.Cond = as.factor(Overall.Cond),
+         log.price = log(price),
+         log.Lot.Area = log(Lot.Area))
+
+```
+
+There is one problem to solve yet, as I used the House.Style variable to build the model. The test data has 2 houses with the House.Style 2.5Fin where none existed in the training data. Calculating the predictions in the new test data will thus result in an error. The only solution I found was to remove the 2 houses with this problem from the test dataset. The same problem happens with the predictor Neighborhood as the test data has rows with the level Landmark and the predictor Exterior.1st. The same solution was used to eliminate the rows with this problem.
+
+
+```{r}
+ames_test <- ames_test %>% 
+  filter(House.Style != '2.5Fin') %>% 
+  filter(Neighborhood != 'Landmrk') %>% 
+  filter(Exterior.1st != 'AsphShn')
+
+```
+
+
+```{r}
+predictions_test <- exp(predict(initial_model_AIC,ames_test))
+residuals_test <- ames_test$price - predictions_test
+
+```
+
+
+```{r}
+rmse_test <- sqrt(mean(residuals_test^2))
+rmse_test
+```
+
+As the RMSE rises with the predictions in the test data, we can conclude,as expected, that this model fits the training data better than out of sample data. A way of simplifying the model as suggested would be perhaps to use the model built with the BIC instead of the AIC.
+
+
+
+
+
+
+
+################################## Development of a Final Model ######################################
+
+Now that I have developed an initial model to use as a baseline, I am creating a final model with at most 20 variables to predict housing prices in Ames, IA, selecting from the full array of variables in the dataset and using any of the tools that I introduced in this specialization.
+
+
+
+#Final Model
+
+As the initial model already showed a good predictive power with a low RMSE in the test data, I'm not going to do many alterations on it other than try to improve its accuracy with a few more variables to differentiate lower quality houses from higher quality houses. Thus, I will try to add the Year.Remod.Add, Garage.Area, Bsmt.Qual and Pool.QC variables to the initial model.
+
+```{r}
+final_model <- lm(log(price) ~ log(Lot.Area) + MS.SubClass + Overall.Qual + 
+                    Overall.Cond + Heating.QC + Year.Built + House.Style + Neighborhood + 
+                    Exterior.1st + X1st.Flr.SF + Year.Remod.Add + Bsmt.Qual + Garage.Area + Pool.QC, data = ames_train)
+```
+
+
+
+# Now to compare if the AIC criteria also chooses the same model using backward step selection:
+```{r}
+final_model_AIC <- step(final_model, direction='backward', trace = FALSE)
+final_model_AIC
+```
+
+
+
+
+
+#The AIC criteria also chooses the same model with the 14 selected predictor variables chosen. 
+#Now to compare this model with the initial one and check if it truly is better than the initial.
+```{r}
+anova(initial_model_AIC, final_model_AIC)
+```
+
+
+
+#The ANOVA results show that the new variables increase the predictive power of this new model compared to the older one. The final model summary thus is:
+```{r}
+summary(final_model_AIC)
+```
+
+All the new variables chosen to add to the previous model are shown to be significant and the adjusted R^2 of the model also rises to 92.1%, explaning 92.1% of the variance of the log of the selling price of the houses.
+
+
+
+## Transformation
+
+# Lot.Area needs to be log transformed as well as price due to their skeweness. The same doesn't happen with any other other variables used in the model so there is no need for transformations.
+# To prove this is right, plotting the other continuous predictor variables used in the model.
+
+```{r}
+ggplot(ames_train, aes(x = Garage.Area, y = log(price))) + geom_point() + theme_bw() + geom_smooth(method='lm', se = FALSE)
+```
+
+
+#Model Testing
+
+I was very happy with the results from the initial model and its low RSME on the test data, even though it was a bit higher than the RMSE in the training data as expected. The final model resulted only from a try to add some more variables in order to improve predictive power.
+
+
+
+
+
+#Final Model Assessment
+For final model, creating and briefly interpreting an informative plot of the residuals.
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(final_model_AIC)
+```
+
+Once again, other than the heavy tails on the normal distribution of the residuals, there does not appear to exist any major assumption violation in the residuals plots. This may bring some problems in the inference estimation of confidence intervals but as we are mainly interested in predictive power here and the sample number is large, this does not seem to be a major problem. Once again, some points show high leverage in the Cook's plot but once again this is to be expected as the linear model uses so many categorical variables.
+
+
+#Final Model RMSE
+```{r}
+ames_test <- ames_test %>% 
+  filter(Pool.QC != 'TA')
+```
+
+
+```{r}
+predictions_final_test <- exp(predict(final_model_AIC,ames_test))
+residuals_final_test <- ames_test$price - predictions_final_test
+```
+
+
+```{r}
+rmse_final_test <- sqrt(mean(residuals_final_test^2))
+rmse_final_test
+```
+
+Sadly, it seems the final model shows a bigger RMSE compared to the initial model in the test data even though it has a better Adjusted R^2 than the initial model. Thus, it probably means this model is more overfitted than the initial one and better predictions may be made with the initial simpler model.
+
+
+
+
+
+
+# Final Model Validation
+Testing my final model on a separate, validation data set is a great way to determine how it will perform in real-life practice.
+
+I am using the "ames_validation" dataset to do some additional assessment of my final model.
+
+```{r}
+load("ames_validation.Rdata")
+
+ames_validation <- ames_validation %>% 
+  mutate(Alley = if_else(is.na(Alley), 'No Alley Access', as.character(Alley)),
+         Bsmt.Qual = if_else(is.na(Bsmt.Qual), 'No Basement', as.character(Bsmt.Qual)),
+         Bsmt.Cond = if_else(is.na(Bsmt.Cond), 'No Basement', as.character(Bsmt.Cond)),
+         Bsmt.Exposure = if_else(is.na(Bsmt.Exposure), 'No Basement', as.character(Bsmt.Cond)),
+         BsmtFin.Type.1 = if_else(is.na(BsmtFin.Type.1), 'No Basement', as.character(BsmtFin.Type.1)),
+         BsmtFin.Type.2 = if_else(is.na(BsmtFin.Type.2), 'No Basement', as.character(BsmtFin.Type.2)),
+         Fireplace.Qu = if_else(is.na(Fireplace.Qu), 'No Fireplace', as.character(Fireplace.Qu)),
+         Garage.Type = if_else(is.na(Garage.Type), 'No Garage', as.character(Garage.Type)),
+         Garage.Finish = if_else(is.na(Garage.Finish), 'No Garage', as.character(Garage.Finish)),
+         Garage.Qual = if_else(is.na(Garage.Qual), 'No Garage', as.character(Garage.Qual)),
+         Garage.Cond = if_else(is.na(Garage.Cond), 'No Garage', as.character(Garage.Cond)),
+         Pool.QC = if_else(is.na(Pool.QC), 'No Pool', as.character(Pool.QC)),
+         Fence = if_else(is.na(Fence), 'No Fence', as.character(Fence)),
+         Misc.Feature = if_else(is.na(Misc.Feature), 'No Misc Features', as.character(Misc.Feature)),
+         Years.Old = 2018 - Year.Built,
+         MS.SubClass = as.factor(MS.SubClass),
+         Overall.Qual = as.factor(Overall.Qual),
+         Overall.Cond = as.factor(Overall.Cond),
+         log.price = log(price),
+         log.Lot.Area = log(Lot.Area))
+ames_validation <- ames_validation %>% 
+  filter(House.Style != '2.5Fin') %>% 
+  filter(Exterior.1st != 'CBlock' & Exterior.1st != 'PreCast') %>% 
+  filter(Pool.QC != 'TA') %>% 
+  filter(MS.SubClass != '150')
+```
+
+
+```{r}
+predictions_validation <- exp(predict(final_model_AIC,ames_validation))
+residuals_validation <- ames_validation$price - predictions_validation
+```
+
+
+```{r}
+rmse_validation <- sqrt(mean(residuals_validation^2))
+rmse_validation
+```
+Although the RMSE of the final model was higher in the test data compared to the initial model, in the validation data it achieves a lower RMSE (20494.79 dollars) than the one achieved in the test data (24639.6 dollars). This is a much better value than the one achieved in the test data and shows that perhaps the final model is not as overfitted to the training data as I originally thought.
+
+
+
+# Percentage of the 95% predictive confidence intervals that contain the true price of the house in the validation data set:
+# Predict prices
+```{r}
+predict.full.CI <- exp(predict(final_model_AIC, ames_validation, interval = "prediction", level=0.95))
+```
+
+
+# Calculate proportion of observations that fall within prediction intervals
+```{r}
+coverage.prob.full <- mean(ames_validation$price > predict.full.CI[,"lwr"] &
+                             ames_validation$price < predict.full.CI[,"upr"])
+coverage.prob.full
+```
+
+The coverage probability of this final model is approximately 95%, thus this model properly reflects uncertainty.
+
+
+
+## Conclusion
+This dataset contains enough variables to build an interesting linear model that tries to predict the selling price for houses. Based on the reuslts from this model, it achieves a low RMSE in the validation data and quantifies uncertainty well. It also doesn't have major problems in the diagnostic plots. The variables that seem to be more important for predicting the selling price of a house according to AIC and this model are the logarithm of the Lot Area, Overall.Qual, Overall.Cond, Heating.QC, Year.Built, House.Style, Neighborhood, Exterior.1st, X1st.Flr.SF, Year.Remod.Add, Bsmt.Qual, Garage.Area and Pool.QC. The final model has an adjusted R^2 of 92.1%, explaining 92.1% of the variance in the logarithm of house prices.
+
+With this project I learned a lot about fitting linear models, exploring a new dataset, diagnosing problems and discovering how to choose and validate created models with test and validation data. Unfortunately, due to a lack of time I could only do this via a Frequentist Approach and I'm sure the Bayesian Approach results would also be interesting and would have the advantage of fitting priors that could quantify better some expert knowledge regarding the dataset.
+
+In the future, collecting more variables in this dataset or using more advanced prediction methodologies than linear regression could contribute to achieve better predictive power starting with this final model as a scaffold.
+
